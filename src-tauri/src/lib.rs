@@ -25,7 +25,7 @@ fn encrypt_file(file_path: String) -> Result<String, String> {
     final_payload.extend_from_slice(&encrypted_data);
     
     // Create dedicated vault folder on Desktop for easy access
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/shauryashah".to_string());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/USER".to_string());
     let vault_dir = format!("{}/Desktop/CipherVault_Enclave", home);
     fs::create_dir_all(&vault_dir).map_err(|e| e.to_string())?;
     
@@ -53,7 +53,7 @@ struct VaultFile {
 
 #[tauri::command]
 fn list_files() -> Result<Vec<VaultFile>, String> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/shauryashah".to_string());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/USER".to_string());
     let vault_dir = format!("{}/Desktop/CipherVault_Enclave", home);
     
     let _ = fs::create_dir_all(&vault_dir);
@@ -84,7 +84,7 @@ fn list_files() -> Result<Vec<VaultFile>, String> {
 
 #[tauri::command]
 fn delete_file(file_name: String) -> Result<(), String> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/shauryashah".to_string());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/USER".to_string());
     let vault_dir = format!("{}/Desktop/CipherVault_Enclave", home);
     
     if file_name.contains('/') || file_name.contains('\\') {
@@ -101,7 +101,7 @@ use tauri_plugin_opener::OpenerExt;
 
 #[tauri::command]
 fn decrypt_and_view(app: tauri::AppHandle, file_name: String) -> Result<(), String> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/shauryashah".to_string());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/USER".to_string());
     let vault_dir = format!("{}/Desktop/CipherVault_Enclave", home);
     let out_dir = format!("{}/Desktop/CipherVault_Decrypted", home);
     
@@ -179,7 +179,7 @@ async fn start_broadcast(file_name: String) -> Result<BroadcastInfo, String> {
         let pin_num: u32 = rand::random::<u32>() % 1000000;
         let pin = format!("{:06}", pin_num);
         
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/shauryashah".to_string());
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/USER".to_string());
         let vault_dir = format!("{}/Desktop/CipherVault_Enclave", home);
         let file_path = format!("{}/{}", vault_dir, file_name);
         
