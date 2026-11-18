@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CipherVault - Secure Viewer</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+        
+        :root {
+            --surface: #0a0a0c;
+            --surface-bright: #1c1b1d;
+            --on-surface: #e5e1e4;
+            --outline: #8e9192;
+            --outline-variant: #444748;
+            --primary: #00ffcc;
+            --error: #ffb4ab;
+        }
+        
+        body {
+            background-color: var(--surface);
+            color: var(--on-surface);
+            font-family: 'DM Sans', sans-serif;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            flex-direction: column;
+            overflow: hidden;
+            user-select: none; /* Disable selection */
+            -webkit-user-select: none;
+        }
+
+        /* Prevent right-click overlay */
+        #protection-layer {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 9999;
+            pointer-events: none;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 450px;
+            padding: 32px;
+            border: 1px solid rgba(0, 255, 204, 0.2);
+            background: rgba(28, 27, 29, 0.7);
+            backdrop-filter: blur(20px);
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+            z-index: 10;
+        }
+
+        .header {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px;
+            color: var(--primary);
+            margin-bottom: 8px;
+            text-align: center;
+            letter-spacing: 3px;
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: var(--outline);
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        input {
+            width: 100%;
+            padding: 16px;
+            background: rgba(0,0,0,0.4);
+            border: 1px solid var(--outline-variant);
+            color: #fff;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 20px;
+            text-align: center;
+            letter-spacing: 8px;
+            margin-bottom: 16px;
+            border-radius: 8px;
+            box-sizing: border-box;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.1);
+        }
+
+        button {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(90deg, #00ffcc, #00aaff);
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: bold;
+            font-size: 15px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.2s ease;
+        }
+
+        button:hover:not(:disabled) {
+            filter: brightness(1.2);
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.3);
+        }
+        
+        button:disabled {
+            background: var(--outline-variant);
+            color: var(--outline);
+            cursor: not-allowed;
+        }
+
+        .status {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            text-align: center;
+            margin-top: 20px;
+            color: var(--outline);
+            min-height: 16px;
+        }
+
+        /* Viewport for the actual file */
+        #viewer-container {
+            display: none;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            position: absolute;
+            top: 0; left: 0;
+            z-index: 5;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #viewer-content {
+            max-width: 95vw;
+            max-height: 95vh;
+            object-fit: contain;
+            pointer-events: none; /* Block right clicks on the actual element */
+        }
+        
+        .watermark {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            font-family: 'JetBrains Mono', monospace;
+            color: rgba(255,255,255,0.2);
+            pointer-events: none;
+            font-size: 14px;
+        }
+
+        /* Custom scrollbar for text */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--surface); }
+        ::-webkit-scrollbar-thumb { background: var(--outline-variant); border-radius: 4px; }
+    </style>
+</head>
+<body oncontextmenu="return false;"> <!-- Disable right click everywhere -->
+
+    <!-- Protection Layer prevents drag and drop or interaction with media elements -->
+    <div id="protection-layer"></div>
+
+    <div class="container" id="auth-container">
+        <div class="header">SECURE SANDBOX</div>
+        <div class="subtitle" id="relay-status">Initializing Web Relay...</div>
+        
+        <input type="text" id="pin" placeholder="ENTER PIN" maxlength="6" disabled autocomplete="off" />
+        <button id="btn" disabled onclick="fetchAndDecrypt()">UNLOCK & VIEW</button>
+
+        <div id="status" class="status"></div>
+    </div>
+
+    <!-- Viewer Sandbox -->
+    <div id="viewer-container">
+        <div id="viewer-wrapper" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"></div>
+        <div class="watermark">CipherVault Secure Sandbox</div>
+    </div>
+
+    <script>
+        // Disable keyboard shortcuts for save (Cmd+S / Ctrl+S)
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+                e.preventDefault();
+                alert("Saving is disabled in the Secure Sandbox.");
+            }
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
+                e.preventDefault();
+                alert("Printing is disabled in the Secure Sandbox.");
+            }
+        });
+
+        // Parse Relay URL from query params
+        const urlParams = new URLSearchParams(window.location.search);
+        let relayUrl = urlParams.get('relay'); // e.g. "https://xxxx.serveo.net"
+        let targetFilename = "secure_payload";
+
+        if (!relayUrl) {
+            document.getElementById('relay-status').innerText = "ERROR: Missing relay parameter in URL.";
+            document.getElementById('relay-status').style.color = "var(--error)";
+        } else {
+            // Ensure no trailing slash
+            if(relayUrl.endsWith('/')) relayUrl = relayUrl.slice(0, -1);
+            
+            // Check metadata from relay
+            fetch(relayUrl + '/meta')
+                .then(r => r.json())
+                .then(data => {
+                    targetFilename = data.filename;
+                    document.getElementById('relay-status').innerText = "Relay Locked: " + targetFilename;
+                    document.getElementById('relay-status').style.color = "var(--primary)";
+                    document.getElementById('pin').disabled = false;
+                    document.getElementById('btn').disabled = false;
+                })
+                .catch(e => {
+                    document.getElementById('relay-status').innerText = "Relay connection lost or expired.";
+                    document.getElementById('relay-status').style.color = "var(--error)";
+                });
+        }
+
+        async function fetchAndDecrypt() {
+            const status = document.getElementById('status');
+            const btn = document.getElementById('btn');
+            
+            try {
+                btn.disabled = true;
+                status.innerText = "Downloading encrypted payload...";
+                status.style.color = "var(--outline)";
+
+                const pin = document.getElementById('pin').value.replace(/\s+/g, '');
+                if (pin.length !== 6) throw new Error("PIN must be exactly 6 digits.");
+
+                // 1. Fetch encrypted bytes from relay
+                const response = await fetch(relayUrl + '/payload');
+                if (!response.ok) throw new Error("Payload not found on relay server.");
+                const encryptedBuffer = await response.arrayBuffer();
+
+                status.innerText = "Deriving cryptographic keys...";
+
+                // 2. Derive key (SHA-256 of PIN)
+                const pinBytes = new TextEncoder().encode(pin);
+                const hashBuffer = await crypto.subtle.digest('SHA-256', pinBytes);
+                const key = await crypto.subtle.importKey("raw", hashBuffer, "AES-GCM", false, ["decrypt"]);
+
+                status.innerText = "Decrypting payload in-memory...";
+
+                // 3. Split nonce and ciphertext
+                const encryptedArray = new Uint8Array(encryptedBuffer);
+                const nonce = encryptedArray.slice(0, 12);
+                const ciphertext = encryptedArray.slice(12);
+
+                // 4. Decrypt Wrapper
+                const decryptedBuffer = await crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: nonce },
+                    key,
+                    ciphertext
+                );
+
+                status.innerText = "Bypassing hardware lock...";
+
+                // 5. HARDWARE KEY DECRYPTION FOR RAW FILE
+                const masterKeyBytes = new TextEncoder().encode("ciphervault_hardware_key_32bytes");
+                const masterKey = await crypto.subtle.importKey("raw", masterKeyBytes, "AES-GCM", false, ["decrypt"]);
+                
+                const cvaultArray = new Uint8Array(decryptedBuffer);
+                const masterNonce = cvaultArray.slice(0, 12);
+                const masterCiphertext = cvaultArray.slice(12);
+                
+                const rawBuffer = await crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: masterNonce },
+                    masterKey,
+                    masterCiphertext
+                );
+                
+                const rawArray = new Uint8Array(rawBuffer);
+                let actualFileArray = rawArray;
+                if (rawArray.length >= 5 && rawArray[0] === 67 && rawArray[1] === 86 && rawArray[2] === 76 && rawArray[3] === 84) {
+                    actualFileArray = rawArray.slice(5);
+                }
+
+                // 6. Identify file type
+                let rawFilename = targetFilename.replace(".cvault", "");
+                let ext = rawFilename.split('.').pop().toLowerCase();
+                let mimeType = "application/octet-stream";
+                let renderType = "unknown";
+
+                if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+                    mimeType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+                    renderType = "image";
+                } else if (['mp4', 'webm', 'ogg'].includes(ext)) {
+                    mimeType = `video/${ext}`;
+                    renderType = "video";
+                } else if (['txt', 'md', 'csv', 'json', 'js', 'py', 'rs', 'html', 'css'].includes(ext)) {
+                    mimeType = "text/plain";
+                    renderType = "text";
+                } else if (ext === 'pdf') {
+                    mimeType = "application/pdf";
+                    renderType = "pdf";
+                }
+
+                // 7. Render Sandbox
+                const blob = new Blob([actualFileArray], { type: mimeType });
+                const blobUrl = window.URL.createObjectURL(blob);
+
+                document.getElementById('auth-container').style.display = 'none';
+                document.getElementById('viewer-container').style.display = 'flex';
+                
+                const wrapper = document.getElementById('viewer-wrapper');
+                
+                if (renderType === "image") {
+                    wrapper.innerHTML = `<img src="${blobUrl}" id="viewer-content" />`;
+                } else if (renderType === "video") {
+                    // Video has controls, but we overlay a protection layer so they can't right click it
+                    wrapper.innerHTML = `<video src="${blobUrl}" id="viewer-content" controls style="pointer-events: auto; max-width: 90vw; max-height: 90vh;"></video>`;
+                } else if (renderType === "text") {
+                    const text = new TextDecoder().decode(actualFileArray);
+                    // Render in a secure scrolling div
+                    wrapper.innerHTML = `<div style="width: 80vw; height: 80vh; background: #1c1b1d; padding: 24px; overflow-y: auto; color: #e5e1e4; font-family: 'JetBrains Mono', monospace; font-size: 14px; white-space: pre-wrap; border-radius: 8px; border: 1px solid var(--outline-variant);">${text.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`;
+                } else if (renderType === "pdf") {
+                    wrapper.innerHTML = `<iframe src="${blobUrl}#toolbar=0" style="width: 90vw; height: 90vh; border: none; background: #fff; border-radius: 8px;"></iframe>`;
+                } else {
+                    // Fallback to Option B: Self-Decrypting Download if the browser can't sandbox it natively
+                    wrapper.innerHTML = `
+                        <div style="text-align: center; max-width: 400px; padding: 32px; background: rgba(28, 27, 29, 0.7); border-radius: 16px; border: 1px solid rgba(0,255,204,0.2);">
+                            <div style="font-size: 48px; margin-bottom: 16px;">📦</div>
+                            <h3 style="color: #00ffcc; margin: 0 0 16px 0; font-family: 'JetBrains Mono', monospace;">UNSUPPORTED MEDIA</h3>
+                            <p style="color: var(--outline); font-size: 14px; line-height: 1.5; margin-bottom: 24px;">
+                                This file format (${ext}) cannot be securely previewed in the browser sandbox. 
+                            </p>
+                            <a href="${blobUrl}" download="${rawFilename}" style="display: block; width: 100%; padding: 16px; background: #fff; color: #000; text-decoration: none; font-weight: bold; font-family: 'JetBrains Mono', monospace; border-radius: 8px; text-transform: uppercase;">SAVE LOCALLY TO DISK</a>
+                            <p style="color: var(--error); font-size: 11px; margin-top: 16px;">Warning: Downloading removes the security barrier.</p>
+                        </div>
+                    `;
+                    document.getElementById('protection-layer').style.pointerEvents = "none";
+                }
+                
+            } catch (err) {
+                console.error(err);
+                status.innerText = err.message.includes("not found") ? "ERROR: Relay offline." : "DECRYPTION FAILED. Incorrect PIN.";
+                status.style.color = "var(--error)";
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
